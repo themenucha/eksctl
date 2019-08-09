@@ -6,7 +6,7 @@ go 1.12
 require (
 	github.com/MakeNowJust/heredoc v0.0.0-20171113091838-e9091a26100e // indirect
 	github.com/alecthomas/jsonschema v0.0.0-20190530235721-fd8d96416671
-	github.com/aws/aws-sdk-go v1.19.18
+	github.com/aws/aws-sdk-go v1.19.11
 	github.com/awslabs/goformation v0.0.0-00010101000000-000000000000
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/christopherhein/go-version v0.0.0-20180807222509-fee8dd1f7c24
@@ -78,7 +78,7 @@ require (
 	go.etcd.io/bbolt v1.3.3 // indirect
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/zap v1.10.0 // indirect
-	golang.org/x/tools v0.0.0-20190614205625-5aca471b1d59
+	golang.org/x/tools v0.0.0-20190731214159-1e85ed8060aa
 	google.golang.org/grpc v1.21.1 // indirect
 	gopkg.in/gcfg.v1 v1.2.3 // indirect
 	gopkg.in/ini.v1 v1.42.0 // indirect
@@ -102,6 +102,7 @@ replace (
 	github.com/Azure/go-autorest => github.com/Azure/go-autorest v10.14.0+incompatible
 	// Needed due to to Sirupsen/sirupsen case clash
 	github.com/Sirupsen/logrus => github.com/sirupsen/logrus v1.4.2
+	github.com/aws/aws-sdk-go => ../aws-sdk-go
 	github.com/awslabs/goformation => github.com/errordeveloper/goformation v0.0.0-20190507151947-a31eae35e596
 	// go mod appears to pick wrong version of github.com/docker/distribution automatically, which breaks k8s.io/kubernetes@v1.12.6
 	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20190619192407-5223c27422cc

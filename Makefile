@@ -174,7 +174,7 @@ site/content/usage/20-schema.md: $(call godeps,cmd/schema/generate.go)
 $(generated_code_aws_sdk_mocks): $(call godeps,pkg/eks/mocks/mocks.go)
 	mkdir -p vendor/github.com/aws/
 	@# Hack for Mockery to find the dependencies handled by `go mod`
-	ln -sfn "$$(go env GOPATH)/pkg/mod/github.com/aws/aws-sdk-go@v1.19.18" vendor/github.com/aws/aws-sdk-go
+	#ln -sfn "$$(go env GOPATH)/pkg/mod/github.com/aws/aws-sdk-go@v1.19.18" vendor/github.com/aws/aws-sdk-go
 	time env GOBIN=$(GOBIN) go generate ./pkg/eks/mocks
 
 ##@ Docker
