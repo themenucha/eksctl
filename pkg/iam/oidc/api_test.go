@@ -14,23 +14,84 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/weaveworks/eksctl/pkg/testutils/mockprovider"
-	//api "github.com/weaveworks/eksctl/pkg/apis/eksctl.io/v1alpha5"
 )
 
 var _ = Describe("EKS/IAM API wrapper", func() {
-	Describe("can get OIDC issuer URL and host fingerprint", func() {
+	const (
+		exampleIssuer   = "https://exampleIssuer.eksctl.io/id/13EBFE0C5BD60778E91DFE559E02689C"
+		fakeProviderARN = "arn:aws:iam::12345:oidc-provider/localhost/"
+	)
+
+	Describe("parse OIDC issuer URL and host fingerprint", func() {
 		var (
 			p *mockprovider.MockProvider
-			// ctl *eks.ClusterProvider
-			// cfg *api.ClusterConfig
+
+			err error
+		)
+
+		BeforeEach(func() {
+			p = mockprovider.NewMockProvider()
+		})
+
+		It("should get cluster, cache status and get issuer URL", func() {
+			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", exampleIssuer)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(oidc.issuerURL.Port()).To(Equal("443"))
+			Expect(oidc.issuerURL.Hostname()).To(Equal("exampleIssuer.eksctl.io"))
+		})
+
+		It("should handle bad issuer URL", func() {
+			_, err = NewOpenIDConnectManager(p.IAM(), "12345", "http://foo\x7f.com/")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(HavePrefix("parsing OIDC issuer URL"))
+		})
+
+		It("should handle bad issuer URL scheme", func() {
+			_, err = NewOpenIDConnectManager(p.IAM(), "12345", "http://foo.com/")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(HavePrefix("unsupported URL scheme"))
+		})
+
+		It("should get cluster, and fail to connect to fake issue URL", func() {
+			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:10020/")
+			Expect(err).NotTo(HaveOccurred())
+
+			err = oidc.getIssuerCAThumbprint()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(HavePrefix("connecting to issuer OIDC (https://localhost:10020/): dial tcp"))
+		})
+
+		It("should get OIDC issuer's CA fingerprint", func() {
+			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:6443/")
+			Expect(err).NotTo(HaveOccurred())
+
+			srv := newServer(oidc.issuerURL.Host)
+
+			go srv.ListenAndServeTLS("testdata/test-server.pem", "testdata/test-server-key.pem")
+
+			oidc.insecureSkipVerify = true
+
+			err = oidc.getIssuerCAThumbprint()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(oidc.issuerCAThumbprint).ToNot(BeEmpty())
+
+			Expect(oidc.issuerCAThumbprint).To(Equal("8b453cc675feb77c65163b7a9907d77994386664"))
+
+			err = srv.Close()
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("create/get/delete tests", func() {
+		var (
+			p    *mockprovider.MockProvider
+			srv  *http.Server
+			oidc *OpenIDConnectManager
+
 			err error
 
 			fakeProviderCreated = new(bool)
-		)
-
-		const (
-			exampleIssuer   = "https://exampleIssuer.eksctl.io/id/13EBFE0C5BD60778E91DFE559E02689C"
-			fakeProviderARN = "arn:aws:iam::12345:oidc-provider/localhost/"
 		)
 
 		BeforeEach(func() {
@@ -69,106 +130,60 @@ var _ = Describe("EKS/IAM API wrapper", func() {
 				}
 				return false
 			})).Return(fakeProviderCreateOutput, nil)
+
+			p.MockIAM().On("DeleteOpenIDConnectProvider", mock.MatchedBy(func(input *awsiam.DeleteOpenIDConnectProviderInput) bool {
+				if *input.OpenIDConnectProviderArn == fakeProviderARN {
+					*fakeProviderCreated = false
+					return true
+				}
+				return false
+			})).Return(nil, nil)
 		})
 
-		It("should get cluster, cache status and get issuer URL", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", exampleIssuer)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(oidc.issuerURL.Port()).To(Equal("443"))
-			Expect(oidc.issuerURL.Hostname()).To(Equal("exampleIssuer.eksctl.io"))
-		})
-
-		It("should handle bad issuer URL", func() {
-			_, err = NewOpenIDConnectManager(p.IAM(), "12345", "http://foo\x7f.com/")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(HavePrefix("parsing OIDC issuer URL"))
-		})
-
-		It("should handle bad issuer URL scheme", func() {
-			_, err = NewOpenIDConnectManager(p.IAM(), "12345", "http://foo.com/")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(HavePrefix("unsupported URL scheme"))
-		})
-
-		It("should get cluster, and fail to connect to fake issue URL", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:10020/")
+		JustBeforeEach(func() {
+			oidc, err = NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:8443/")
 			Expect(err).NotTo(HaveOccurred())
 
-			err = oidc.getIssuerCAThumbprint()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(HavePrefix("connecting to issuer OIDC (https://localhost:10020/): dial tcp"))
-		})
+			srv = newServer(oidc.issuerURL.Host)
 
-		It("should get OIDC issuer's CA fingerprint", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:6443/")
-			Expect(err).NotTo(HaveOccurred())
+			go srv.ListenAndServeTLS("testdata/test-server.pem", "testdata/test-server-key.pem")
 
-			srv := newServer(oidc.issuerURL.Host)
-			go func() {
-				defer GinkgoRecover()
-				err = srv.ListenAndServeTLS("testdata/test-server.pem", "testdata/test-server-key.pem")
+			{
+				exists, err := oidc.CheckProviderExists()
 				Expect(err).NotTo(HaveOccurred())
-			}()
+				Expect(exists).To(BeFalse())
+				Expect(oidc.ProviderARN).To(BeEmpty())
+			}
 
 			oidc.insecureSkipVerify = true
-
-			err = oidc.getIssuerCAThumbprint()
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(oidc.issuerCAThumbprint).ToNot(BeEmpty())
-
-			Expect(oidc.issuerCAThumbprint).To(Equal("8b453cc675feb77c65163b7a9907d77994386664"))
-		})
-
-		It("should create OIDC provider", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:8443/")
-			Expect(err).NotTo(HaveOccurred())
-
-			srv := newServer(oidc.issuerURL.Host)
-			go func() {
-				defer GinkgoRecover()
-				err = srv.ListenAndServeTLS("testdata/test-server.pem", "testdata/test-server-key.pem")
-				Expect(err).NotTo(HaveOccurred())
-			}()
-
-			oidc.insecureSkipVerify = true
-
-			exists, err := oidc.CheckProviderExists()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(exists).To(BeFalse())
-
-			Expect(oidc.ProviderARN).To(BeEmpty())
 
 			err = oidc.CreateProvider()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(oidc.ProviderARN).To(Equal(fakeProviderARN))
+			{
+				exists, err := oidc.CheckProviderExists()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(exists).To(BeTrue())
+				Expect(oidc.ProviderARN).To(Equal(fakeProviderARN))
+			}
+
 		})
 
-		It("should check OIDC provider exists, delete it and check again", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:8443/")
+		JustAfterEach(func() {
+			err = srv.Close()
 			Expect(err).NotTo(HaveOccurred())
+		})
 
-			Expect(oidc.ProviderARN).To(BeEmpty())
+		It("delete existing OIDC provider and check it no longer exists", func() {
+			err = oidc.DeleteProvider()
+			Expect(err).NotTo(HaveOccurred())
 
 			exists, err := oidc.CheckProviderExists()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(exists).To(BeTrue())
-
-			Expect(oidc.ProviderARN).To(Equal(fakeProviderARN))
-
-			// TODO
-			// - m.DeleteProvider
-
-			// exists, err := oidc.CheckProviderExists()
-			// Expect(err).NotTo(HaveOccurred())
-			// Expect(exists).To(BeFalse())
+			Expect(exists).To(BeFalse())
 		})
 
 		It("should construct assume role policy document for a service account", func() {
-			oidc, err := NewOpenIDConnectManager(p.IAM(), "12345", "https://localhost:8443/")
-			Expect(err).NotTo(HaveOccurred())
-
 			exists, err := oidc.CheckProviderExists()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(exists).To(BeTrue())
