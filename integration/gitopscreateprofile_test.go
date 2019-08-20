@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/afero"
 
-	"github.com/weaveworks/eksctl/pkg/ctl/cmdutils"
 	. "github.com/weaveworks/eksctl/integration/runner"
 )
 
@@ -21,7 +20,10 @@ var _ = Describe("(Integration) generate profile", func() {
 		It("should write the processed repo files in the supplied directory", func() {
 
 			if clusterName == "" {
-				clusterName = cmdutils.ClusterName("", "")
+				clusterName = "amazing-testing-gopher"
+			}
+			if region == "" {
+				region = "us-west-2"
 			}
 
 			cmd := eksctlExperimentalCmd.WithArgs(
