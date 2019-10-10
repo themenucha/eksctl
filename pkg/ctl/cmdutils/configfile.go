@@ -132,21 +132,6 @@ func NewMetadataLoader(cmd *Cmd) ClusterConfigLoader {
 	return l
 }
 
-// NewEnableProfileLoader handles loading of clusterConfigFile vs using flags for gitops commands
-func NewEnableProfileLoader(cmd *Cmd) ClusterConfigLoader {
-	l := newCommonClusterConfigLoader(cmd)
-
-	l.validateWithoutConfigFile = func() error {
-		meta := l.ClusterConfig.Metadata
-		if meta.Name == "" {
-			return ErrMustBeSet("--cluster")
-		}
-		return nil
-	}
-
-	return l
-}
-
 // NewInstallFluxLoader handles loading of clusterConfigFile vs using flags for install commands
 func NewInstallFluxLoader(cmd *Cmd) ClusterConfigLoader {
 	l := newCommonClusterConfigLoader(cmd)
